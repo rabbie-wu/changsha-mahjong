@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>长沙麻将 · 多桌多人</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; background: #14532d; color: #f8fafc; min-height: 100vh; }
+  button { font-family: inherit; cursor: pointer; border: none; border-radius: 8px; padding: 10px 18px; font-size: 16px; }
+  .btn-main { background: #f59e0b; color: #1c1917; font-weight: 700; }
+  .btn-sub { background: #166534; color: #dcfce7; border: 1px solid #22c55e; }
+  .btn-danger { background: #991b1b; color: #fecaca; }
+  input { font-size: 16px; padding: 10px; border-radius: 8px; border: 1px solid #22c55e; background: #052e16; color: #f0fdf4; width: 100%; }
+  /* 大厅 */
+  #lobby { max-width: 420px; margin: 0 auto; padding: 32px 20px; }
+  #lobby h1 { font-size: 30px; text-align: center; margin-bottom: 6px; }
+  #lobby .sub { text-align: center; color: #bbf7d0; margin-bottom: 24px; font-size: 14px; }
+  .card { background: #166534; border: 1px solid #22c55e55; border-radius: 14px; padding: 18px; margin-bottom: 16px; }
+  .card h3 { margin-bottom: 12px; font-size: 16px; }
+  .row { display: flex; gap: 10px; }
+  .row > * { flex: 1; }
+  .rules { font-size: 13px; line-height: 1.9; color: #dcfce7; }
+  /* 等待室 */
+  #waiting { max-width: 480px; margin: 0 auto; padding: 24px 16px; display: none; }
+  .code-big { font-size: 44px; font-weight: 800; letter-spacing: 8px; text-align: center; color: #fbbf24; }
+  .seat-row { display: flex; align-items: center; gap: 10px; background: #166534; border-radius: 10px; padding: 12px; margin-bottom: 8px; }
+  .seat-row .nm { flex: 1; font-size: 16px; }
+  .tag { font-size: 12px; padding: 2px 8px; border-radius: 99px; background: #0ea5e9; color: #fff; }
+  .tag.bot { background: #a855f7; }
+  /* 牌桌 */
+  #table { display: none; max-width: 860px; margin: 0 auto; padding: 8px; }
+  .parea { background: #16653488; border-radius: 12px; padding: 8px 10px; margin-bottom: 8px; min-height: 64px; }
+  .parea.active { outline: 2px solid #fbbf24; }
+  .phead { display: flex; gap: 8px; align-items: center; font-size: 14px; margin-bottom: 6px; flex-wrap: wrap; }
+  .phead .score { color: #fbbf24; font-weight: 700; }
+  .dealer-dot { background: #dc2626; color: #fff; font-size: 11px; border-radius: 4px; padding: 1px 5px; }
+  .discards { display: flex; flex-wrap: wrap; gap: 3px; min-height: 30px; }
+  .melds { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
+  .meld { display: flex; gap: 1px; background: #052e16; padding: 3px; border-radius: 6px; }
+  .tile { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 42px; background: linear-gradient(#fff, #e7e5e4); color: #1c1917; border-radius: 5px; font-size: 15px; font-weight: 700; box-shadow: 0 2px 0 #a8a29e; user-select: none; }
+  .tile.s0 { color: #b91c1c; } .tile.s1 { color: #1d4ed8; } .tile.s2 { color: #15803d; }
+  .tile.small { width: 22px; height: 31px; font-size: 12px; }
+  .tile.back { background: linear-gradient(#16a34a, #15803d); color: #dcfce7; font-size: 12px; }
+  .tile.last { outline: 2px solid #f59e0b; }
+  #myhand { display: flex; flex-wrap: wrap; gap: 4px; justify-content: center; padding: 6px 0; }
+  #myhand .tile { width: 40px; height: 56px; font-size: 19px; cursor: pointer; }
+  #myhand .tile.sel { transform: translateY(-12px); outline: 3px solid #f59e0b; }
+  #myhand .tile:active { transform: translateY(-8px); }
+  .mid { display: flex; gap: 8px; }
+  .mid .side { flex: 1; }
+  #centerInfo { text-align: center; padding: 10px; font-size: 14px; color: #bbf7d0; }
+  #actions { display: flex; gap: 10px; justify-content: center; padding: 10px; min-height: 58px; flex-wrap: wrap; }
+  #actions button { font-size: 18px; padding: 12px 26px; }
+  .btn-hu { background: #dc2626; color: #fff; font-weight: 800; }
+  .btn-gang { background: #7c3aed; color: #fff; font-weight: 700; }
+  .btn-peng { background: #f59e0b; color: #1c1917; font-weight: 700; }
+  .btn-pass { background: #374151; color: #e5e7eb; }
+  #log { font-size: 12px; color: #bbf7d0; line-height: 1.8; padding: 6px 10px; }
+  /* 结算 */
+  #result { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.72); z-index: 50; align-items: center; justify-content: center; padding: 16px; }
+  #result .box { background: #14532d; border: 2px solid #f59e0b; border-radius: 16px; max-width: 520px; width: 100%; padding: 22px; max-height: 90vh; overflow-y: auto; }
+  #result h2 { text-align: center; margin-bottom: 10px; }
+  .bird-hit { color: #fbbf24; font-weight: 700; }
+  .err { color: #fca5a5; text-align: center; min-height: 20px; font-size: 14px; }
+</style>
+</head>
+<body>
+
+<div id="lobby">
+  <h1>🀄 长沙麻将</h1>
+  <div class="sub">多桌多人 · 纯积分娱乐 · 258做将 · 扎鸟翻倍</div>
+  <div class="card">
+    <h3>你的昵称</h3>
+    <input id="nick" maxlength="10" placeholder="输入昵称">
+  </div>
+  <div class="card">
+    <h3>开一桌</h3>
+    <button class="btn-main" style="width:100%" onclick="createRoom()">创建桌子</button>
+  </div>
+  <div class="card">
+    <h3>加入朋友的桌子</h3>
+    <div class="row">
+      <input id="joinCode" inputmode="numeric" maxlength="4" placeholder="4位桌号">
+      <button class="btn-sub" onclick="joinRoom()">加入</button>
+    </div>
+  </div>
+  <div class="err" id="lobbyErr"></div>
+  <div class="card rules">
+    <h3>玩法速览</h3>
+    · 108 张牌（万/筒/条），不能吃，只能碰、杠<br>
+    · 小胡必须 258 做将；大胡：碰碰胡、清一色、将将胡、七对、全求人<br>
+    · 起手胡：大四喜、板板胡、缺一色、六六顺<br>
+    · 胡牌后扎鸟翻倍：1/5/9 扎本人，2/6 下家，3/7 对家，4/8 上家<br>
+    · 计分：小胡点炮 3 分 / 自摸每家 2 分；大胡点炮 6 分 / 自摸每家 4 分<br>
+    · 人不够可以加机器人补位，先练练手
+  </div>
+</div>
+
+<div id="waiting">
+  <div style="text-align:center;color:#bbf7d0">把桌号告诉朋友，让他们加入</div>
+  <div class="code-big" id="waitCode">----</div>
+  <div id="seatList" style="margin:16px 0"></div>
+  <div class="row">
+    <button class="btn-sub" onclick="addBot()">＋ 加机器人</button>
+    <button class="btn-main" id="startBtn" onclick="startGame()">开始对局</button>
+  </div>
+  <div class="err" id="waitErr" style="margin-top:10px"></div>
+</div>
+
+<div id="table">
+  <div class="parea" id="area2"></div>
+  <div class="mid">
+    <div class="parea side" id="area3"></div>
+    <div class="parea side" id="area1"></div>
+  </div>
+  <div id="centerInfo"></div>
+  <div id="actions"></div>
+  <div class="parea active" id="area0" style="background:#166534">
+    <div class="phead" id="myHead"></div>
+    <div class="melds" id="myMelds"></div>
+    <div id="myhand"></div>
+  </div>
+  <div id="log"></div>
+</div>
+
+<div id="result"><div class="box" id="resultBox"></div></div>
+
+<script>
+const RANK = ['一','二','三','四','五','六','七','八','九'];
+const SUIT = ['万','筒','条'];
+const tileName = t => RANK[t % 9] + SUIT[Math.floor(t / 9)];
+let ws = null, mySeat = -1, roomCode = '', myName = '', state = null, selected = -1;
+
+function tileEl(t, cls) {
+  const d = document.createElement('div');
+  d.className = 'tile s' + Math.floor(t / 9) + (cls ? ' ' + cls : '');
+  d.textContent = tileName(t);
+  return d;
+}
+function connect(cb) {
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  ws = new WebSocket(proto + '//' + location.host);
+  ws.onmessage = e => {
+    const m = JSON.parse(e.data);
+    if (m.type === 'error') {
+      document.getElementById('lobbyErr').textContent = m.msg;
+      document.getElementById('waitErr').textContent = m.msg;
+      return;
+    }
+    if (m.type === 'state') { state = m; mySeat = m.yourSeat; roomCode = m.code; render(); }
+  };
+  ws.onopen = cb;
+  ws.onclose = () => setTimeout(() => { if (roomCode) connect(() => send({ type: 'join', code: roomCode, name: myName })); }, 2000);
+}
+function send(o) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(o)); }
+function createRoom() {
+  myName = document.getElementById('nick').value.trim() || '玩家' + Math.floor(Math.random() * 100);
+  connect(() => send({ type: 'create', name: myName }));
+}
+function joinRoom() {
+  myName = document.getElementById('nick').value.trim() || '玩家' + Math.floor(Math.random() * 100);
+  const code = document.getElementById('joinCode').value.trim();
+  if (code.length !== 4) { document.getElementById('lobbyErr').textContent = '桌号是4位数字'; return; }
+  connect(() => send({ type: 'join', code, name: myName }));
+}
+function addBot() { send({ type: 'addBot' }); }
+function startGame() { send({ type: 'start' }); }
+
+function relSeat(abs) { return (abs - mySeat + 4) % 4; } // 0自己 1下家 2对家 3上家
+const POS_NAME = ['我', '下家', '对家', '上家'];
+
+function render() {
+  const s = state;
+  document.getElementById('lobby').style.display = 'none';
+  if (s.phase === 'lobby') {
+    document.getElementById('waiting').style.display = 'block';
+    document.getElementById('table').style.display = 'none';
+    document.getElementById('result').style.display = 'none';
+    document.getElementById('waitCode').textContent = s.code;
+    const list = document.getElementById('seatList');
+    list.innerHTML = '';
+    s.seats.forEach((seat, i) => {
+      const row = document.createElement('div');
+      row.className = 'seat-row';
+      if (!seat) row.innerHTML = '<span class="nm" style="color:#86efac">（空位）</span>';
+      else {
+        row.innerHTML = '<span class="nm">' + esc(seat.name) + (i === mySeat ? '（我）' : '') + '</span>' +
+          (seat.bot ? '<span class="tag bot">机器人</span>' : '<span class="tag">真人</span>') +
+          '<span style="color:#fbbf24">' + s.scores[i] + ' 分</span>';
+        if (seat.bot) {
+          const b = document.createElement('button');
+          b.className = 'btn-danger'; b.textContent = '移除'; b.style.padding = '6px 12px';
+          b.onclick = () => send({ type: 'removeSeat', seat: i });
+          row.appendChild(b);
+        }
+      }
+      list.appendChild(row);
+    });
+    document.getElementById('startBtn').disabled = !s.seats.every(Boolean);
+    document.getElementById('startBtn').style.opacity = s.seats.every(Boolean) ? 1 : .5;
+    return;
+  }
+  document.getElementById('waiting').style.display = 'none';
+  document.getElementById('table').style.display = 'block';
+  // 其他三家
+  for (const rel of [1, 2, 3]) {
+    const abs = (mySeat + rel) % 4;
+    const seat = s.seats[abs];
+    const area = document.getElementById('area' + rel);
+    area.classList.toggle('active', s.turn === abs && s.phase === 'playing');
+    if (!seat) { area.innerHTML = ''; continue; }
+    let h = '<div class="phead"><b>' + esc(seat.name) + '</b><span>' + POS_NAME[rel] + '</span>' +
+      (s.dealer === abs ? '<span class="dealer-dot">庄</span>' : '') +
+      '<span class="score">' + s.scores[abs] + ' 分</span>' +
+      (seat.bot ? '<span class="tag bot">机器人</span>' : '') +
+      (seat.connected === false ? '<span class="tag" style="background:#6b7280">托管</span>' : '') + '</div>';
+    h += '<div class="discards">' + seat.discards.map((t, i) =>
+      '<div class="tile small s' + Math.floor(t / 9) + (s.lastDiscard && s.lastDiscard.from === abs && i === seat.discards.length - 1 ? ' last' : '') + '">' + tileName(t) + '</div>').join('') + '</div>';
+    h += '<div class="melds">' + seat.melds.map(m =>
+      '<div class="meld">' + (m.kind === 'gang' && m.concealed
+        ? '<div class="tile small back">🀄</div><div class="tile small back">🀄</div><div class="tile small back">🀄</div><div class="tile small back">🀄</div>'
+        : Array(m.kind === 'gang' ? 4 : 3).fill('<div class="tile small s' + Math.floor(m.tile / 9) + '">' + tileName(m.tile) + '</div>').join('')) + '</div>').join('') + '</div>';
+    h += '<div style="margin-top:4px">' + Array(seat.handCount).fill('<span class="tile back small">🀄</span>').join('') + '</div>';
+    area.innerHTML = h;
+  }
+  // 自己
+  const me = s.seats[mySeat];
+  document.getElementById('myHead').innerHTML = '<b>' + esc(me.name) + '</b>' +
+    (s.dealer === mySeat ? '<span class="dealer-dot">庄</span>' : '') +
+    '<span class="score">' + s.scores[mySeat] + ' 分</span>' +
+    '<span>桌号 ' + s.code + '</span>';
+  document.getElementById('area0').classList.toggle('active', s.turn === mySeat && s.phase === 'playing');
+  const mm = document.getElementById('myMelds');
+  mm.innerHTML = '';
+  me.melds.forEach(m => {
+    const d = document.createElement('div'); d.className = 'meld';
+    const n = m.kind === 'gang' ? 4 : 3;
+    for (let i = 0; i < n; i++) d.appendChild(tileEl(m.tile, 'small'));
+    mm.appendChild(d);
+  });
+  const mh = document.getElementById('myhand');
+  mh.innerHTML = '';
+  s.yourHand.forEach((t, i) => {
+    const el = tileEl(t);
+    if (i === selected) el.classList.add('sel');
+    el.onclick = () => {
+      if (state.turn === mySeat && state.phase === 'playing' && !state.claim) {
+        if (selected === i) { send({ type: 'discard', tile: t }); selected = -1; }
+        else selected = i;
+        render();
+      }
+    };
+    mh.appendChild(el);
+  });
+  document.getElementById('centerInfo').textContent =
+    '牌墙剩 ' + s.wallLeft + ' 张' + (s.phase === 'playing' ? (s.turn === mySeat ? ' · 轮到你出牌（点选手牌，再点一次打出）' : ' · 等待 ' + (s.seats[s.turn] ? esc(s.seats[s.turn].name) : '') + ' 出牌') : '');
+  renderActions(s);
+  document.getElementById('log').innerHTML = s.log.map(esc).join('<br>');
+  // 结算
+  const rb = document.getElementById('resultBox');
+  if (s.phase === 'handEnd' && s.result) {
+    const r = s.result;
+    let h = '';
+    if (r.draw) h = '<h2>🤝 流局</h2>';
+    else {
+      h = '<h2>🏆 ' + esc(r.winnerName) + ' 胡牌</h2>' +
+        '<div style="text-align:center;font-size:18px;color:#fbbf24;margin-bottom:8px">' + r.types.join(' · ') + '</div>' +
+        '<div style="display:flex;gap:3px;justify-content:center;flex-wrap:wrap;margin-bottom:8px">' +
+        r.winMelds.map(m => Array(m.kind === 'gang' ? 4 : 3).fill('<div class="tile small s' + Math.floor(m.tile / 9) + '">' + tileName(m.tile) + '</div>').join('')).join('') +
+        r.winHand.map(t => '<div class="tile small s' + Math.floor(t / 9) + '">' + tileName(t) + '</div>').join('') + '</div>';
+      if (r.birds && r.birds.length) {
+        h += '<div style="text-align:center;margin-bottom:8px">🐦 扎鸟：' + r.birds.map((b, i) =>
+          '<span class="tile small s' + Math.floor(b / 9) + '">' + tileName(b) + '</span> 扎中 <span class="bird-hit">' + esc(s.seats[r.birdHits[i]].name) + '</span>').join('；') + '</div>';
+      }
+    }
+    h += '<div style="line-height:2">' + r.detail.map(esc).join('<br>') + '</div>' +
+      '<div style="line-height:2;margin-top:6px;border-top:1px solid #22c55e;padding-top:8px">' +
+      s.seats.map((seat, i) => esc(seat.name) + '：' + r.scores[i] + ' 分' + (r.deltas && r.deltas[i] ? '（' + (r.deltas[i] > 0 ? '+' : '') + r.deltas[i] + '）' : '')).join('<br>') + '</div>' +
+      '<button class="btn-main" style="width:100%;margin-top:14px" onclick="startGame()">下一局</button>';
+    rb.innerHTML = h;
+    document.getElementById('result').style.display = 'flex';
+  } else {
+    document.getElementById('result').style.display = 'none';
+  }
+}
+
+function renderActions(s) {
+  const box = document.getElementById('actions');
+  box.innerHTML = '';
+  const add = (label, cls, fn) => {
+    const b = document.createElement('button');
+    b.textContent = label; b.className = cls; b.onclick = fn;
+    box.appendChild(b);
+  };
+  if (s.phase !== 'playing') return;
+  if (s.claim) {
+    const c = s.claim;
+    const label = { hu: '胡', gang: '杠', peng: '碰' };
+    const cls = { hu: 'btn-hu', gang: 'btn-gang', peng: 'btn-peng' };
+    for (const a of ['hu', 'gang', 'peng']) {
+      if (c.actions.includes(a)) add(label[a] + ' ' + tileName(c.tile), cls[a], () => send({ type: 'claim', action: a }));
+    }
+    add('过', 'btn-pass', () => send({ type: 'claim', action: 'pass' }));
+    return;
+  }
+  if (s.options && s.turn === mySeat) {
+    if (s.options.canHu) add('胡牌', 'btn-hu', () => send({ type: 'hu' }));
+    for (const k of s.options.kongs) {
+      add((k.kind === 'an' ? '暗杠 ' : '补杠 ') + tileName(k.tile), 'btn-gang',
+        () => send({ type: 'selfKong', tile: k.tile, kind: k.kind }));
+    }
+  }
+}
+function esc(s) { return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+</script>
+</body>
+</html>
