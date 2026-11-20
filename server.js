@@ -14,7 +14,7 @@ const server = http.createServer((req, res) => {
   if (!file.startsWith(__dirname)) { res.writeHead(403); return res.end(); }
   fs.readFile(file, (err, data) => {
     if (err) { res.writeHead(404); return res.end('not found'); }
-    const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css' };
+    const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png' };
     res.writeHead(200, { 'Content-Type': types[path.extname(file)] || 'text/plain' });
     res.end(data);
   });
@@ -36,9 +36,13 @@ class Room {
     this.code = code;
     this.seats = [null, null, null, null]; // {name, bot, ws, connected}
     this.phase = 'lobby'; // lobby | playing | handEnd
-    this.scores = [0, 0, 0, 0];
+    this.scores = [200, 200, 200, 200];
+    this.matchOver = false;
     this.dealer = 0;
     this.log = [];
+    this.players = new Map(); // name -> {pid, games, wins}
+    this.history = [];        // 每局结果摘要 (积分详情用)
+    this.handNo = 0;
     this.resetHand();
   }
   resetHand() {
@@ -61,6 +65,17 @@ class Room {
 
 function send(ws, obj) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(obj)); }
 function broadcast(room) { room.seats.forEach((s, i) => { if (s && s.ws) send(s.ws, stateFor(room, i)); }); }
+function broadcastRaw(room, obj) { room.seats.forEach(s => { if (s && s.ws) send(s.ws, obj); }); }
+function regPlayer(room, name) {
+  if (!room.players.has(name)) {
+    let pid;
+    do { pid = Math.floor(10000000 + Math.random() * 90000000); }
+    while ([...room.players.values()].some(p => p.pid === pid));
+    room.players.set(name, { pid, games: 0, wins: 0 });
+  }
+  return room.players.get(name);
+}
+const EMOTES = ['🌹', '🥚', '🩴', '🍭', '💋', '👍', '🎂', '🧧', '🥊', '🍺', '💣', '🐶'];
 
 function stateFor(room, seat) {
   const st = {
@@ -69,10 +84,18 @@ function stateFor(room, seat) {
     scores: room.scores, log: room.log, result: room.result,
     seats: room.seats.map((s, i) => s ? {
       name: s.name, bot: s.bot, connected: s.connected,
+      pid: (room.players.get(s.name) || {}).pid || 0,
+      games: (room.players.get(s.name) || {}).games || 0,
+      wins: (room.players.get(s.name) || {}).wins || 0,
       handCount: room.hands[i].length, melds: room.melds[i], discards: room.discards[i],
     } : null),
+    history: room.history, handNo: room.handNo,
     lastDiscard: room.lastDiscard,
     yourHand: room.hands[seat] || [],
+    drawnTile: (room.phase === 'playing' && room.turn === seat && !room.pending && (room.hands[seat] || []).length % 3 === 2) ? room.lastDrawnTile : null,
+    turnEndsAt: (room.phase === 'playing' && !room.pending) ? (room.turnEndsAt || null) : null,
+    turnTotal: room.turnTotal || 0,
+    matchOver: !!room.matchOver,
     options: null, claim: null,
   };
   if (room.phase === 'playing') {
@@ -113,6 +136,7 @@ function claimOptions(room, seat, tile) {
 // ---------------- 对局流程 ----------------
 function startHand(room) {
 room.resetHand();
+room.handNo++;
 // 建墙 108 张
 const wall = [];
 for (let t = 0; t < 27; t++) for (let k = 0; k < 4; k++) wall.push(t);
@@ -142,8 +166,8 @@ room.turn = seat;
 room.lastDrawWasKong =!!kongReplacement;
 room.lastDrawnTile = tile;
 room.lastDrawWasLast = room.wall.length === 0;
-broadcast(room);
 scheduleTurn(room, seat);
+broadcast(room);
 }
 
 function scheduleTurn(room, seat) {
@@ -151,9 +175,12 @@ clearTimeout(room.turnTimer);
 const s = room.seats[seat];
 if (!s) return;
 if (s.bot ||!s.connected) {
-room.turnTimer = setTimeout(() => botTurn(room, seat), 350 + Math.random() * 400);
+const bd = 350 + Math.random() * 400;
+room.turnTotal = bd; room.turnEndsAt = Date.now() + bd;
+room.turnTimer = setTimeout(() => botTurn(room, seat), bd);
 } else {
 // 真人 60 秒无操作 -> 自动打出一张
+room.turnTotal = 60000; room.turnEndsAt = Date.now() + 60000;
 room.turnTimer = setTimeout(() => {
 if (room.phase === 'playing' && room.turn === seat &&!room.pending) {
 room.pushLog(`⏰ ${s.name} 超时, 自动出牌`);
@@ -342,6 +369,10 @@ detail.push(`${room.seats[from].name} 点炮赔 ${pay} 分${mult > 1? `(扎鸟×
 for (let o = 0; o < 4; o++) room.scores[o] += deltas[o];
 
 room.phase = 'handEnd';
+room.seats.forEach((s, i) => { if (s) { const p = regPlayer(room, s.name); p.games++; if (i === winner) p.wins++; } });
+room.history.unshift(`第${room.handNo}局 ${room.seats[winner].name} 胡牌(${types.join('·')}) ` +
+  deltas.map((d, i) => `${room.seats[i].name}${d >= 0 ? '+' : ''}${d}`).join(' '));
+room.history = room.history.slice(0, 20);
 room.result = {
 winner, winnerName: room.seats[winner].name, types, tier,
 winHand: room.hands[winner].slice(), winMelds: room.melds[winner],
@@ -349,14 +380,30 @@ birds, birdHits: birds.map(b => R.birdHitSeat(b, winner)),
 detail, deltas, tsumo, scores: room.scores.slice(),
 };
 room.dealer = winner;
+checkMatchEnd(room);
 room.pushLog(`🏆 ${room.seats[winner].name} 胡牌`);
 if (birds.length) room.pushLog(`🐦 扎鸟: ${birds.map(b => R.tileName(b)).join('、')}`);
 broadcast(room);
 }
 
+// 任一玩家积分 ≤ 0 -> 全场结束, 生成总成绩
+function checkMatchEnd(room) {
+  if (room.matchOver) return;
+  if (!room.scores.some(s => s <= 0)) return;
+  room.matchOver = true;
+  const standings = room.seats.map((s, i) => ({ seat: i, name: s ? s.name : '空位', score: room.scores[i] }))
+    .sort((a, b) => b.score - a.score);
+  if (room.result) { room.result.matchEnd = true; room.result.standings = standings; }
+  room.pushLog('🏁 有人积分见底, 全场结束');
+}
+
 function endHandDraw(room) {
 room.phase = 'handEnd';
+room.seats.forEach(s => { if (s) regPlayer(room, s.name).games++; });
+room.history.unshift(`第${room.handNo}局 流局`);
+room.history = room.history.slice(0, 20);
 room.result = { draw: true, detail: ['牌墙摸完, 本局流局'], scores: room.scores.slice()};
+checkMatchEnd(room);
 room.pushLog('🤝 流局');
 broadcast(room);
 }
@@ -413,6 +460,7 @@ const code = newCode();
 const room = new Room(code);
 rooms.set(code, room);
 room.seats[0] = { name: (m.name || '玩家').slice(0, 10), bot: false, ws, connected: true};
+regPlayer(room, room.seats[0].name);
 myRoom = room; mySeat = 0;
 return broadcast(room);
 }
@@ -430,6 +478,7 @@ return broadcast(room);
 const empty = room.seats.findIndex(s =>!s);
 if (empty < 0) return send(ws, { type: 'error', msg: '这桌满了'});
 room.seats[empty] = { name, bot: false, ws, connected: true};
+regPlayer(room, name);
 myRoom = room; mySeat = empty;
 return broadcast(room);
 }
@@ -441,6 +490,7 @@ if (empty >= 0 && room.phase!== 'playing') {
 const used = room.seats.filter(Boolean).map(s => s.name);
 const name = BOT_NAMES.find(n =>!used.includes(n)) || '机器人';
 room.seats[empty] = { name, bot: true, ws: null, connected: true};
+regPlayer(room, name);
 room.scores[empty] = room.scores[empty] || 0;
 broadcast(room);
 }
@@ -452,7 +502,21 @@ if (s && s.bot && room.phase!== 'playing') { room.seats[m.seat] = null; broadcas
 return;
 }
 if (m.type === 'start') {
-if (room.phase!== 'playing' && room.full()) startHand(room);
+if (room.phase!== 'playing' && !room.matchOver && room.full()) startHand(room);
+return;
+}
+if (m.type === 'resetMatch') {
+if (room.matchOver && room.phase === 'handEnd') {
+room.scores = [200, 200, 200, 200];
+room.matchOver = false;
+room.result = null;
+room.phase = 'lobby';
+room.handNo = 0;
+room.history = [];
+room.resetHand();
+room.pushLog('🔄 新一场开始, 每人 200 分');
+broadcast(room);
+}
 return;
 }
 if (m.type === 'discard') {
@@ -478,6 +542,26 @@ return;
 }
 if (m.type === 'claim') {
 onClaimResponse(room, mySeat, m.action);
+return;
+}
+if (m.type === 'emote') {
+const to = +m.to;
+if (Number.isInteger(to) && to >= 0 && to < 4 && room.seats[to] && EMOTES.includes(m.emote)) {
+broadcastRaw(room, { type: 'emote', from: mySeat, to, emote: m.emote });
+}
+return;
+}
+if (m.type === 'chat') {
+const text = String(m.text || '').slice(0, 30);
+if (text) broadcastRaw(room, { type: 'chat', from: mySeat, text });
+return;
+}
+if (m.type === 'voice') {
+const data = String(m.data || '');
+const dur = Math.min(Math.max(+m.dur || 0, 0), 20);
+if (data.length > 100 && data.length <= 600000 && dur > 0) {
+broadcastRaw(room, { type: 'voice', from: mySeat, data, dur, mime: String(m.mime || 'audio/webm').slice(0, 40) });
+}
 return;
 }
 });
